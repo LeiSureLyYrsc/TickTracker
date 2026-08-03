@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# WebUI 前端构建产物（源码见 TickTracker-Web）
+webui/frontend/
+
+# 运行数据
+data/
+*.db
+*.sqlite
+.env
+.env.*
