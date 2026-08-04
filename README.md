@@ -87,4 +87,4 @@ WebUI 前端代码位于 [TickTracker-Web](https://github.com/LeiSureLyYrsc/Tick
 
 ## License
 
-本项目仅供学习交流使用。
+
