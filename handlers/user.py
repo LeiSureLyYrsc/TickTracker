@@ -20,6 +20,7 @@ from ..models import (
     User,
 )
 from ..handlers.admin import find_game, find_user
+from ..webui.render import maybe_render
 from ..webui.utils import audit
 from ..models import DailyNote
 
@@ -119,7 +120,9 @@ async def handle_list(bot: Bot, event: MessageEvent, args: Message = CommandArg(
                 if note:
                     lines.append(f"  备注：{note}")
 
-            await cmd_list.finish("\n".join(lines))
+            _text = "\n".join(lines)
+            _rendered = await maybe_render(_text, "list", session)
+            await cmd_list.finish(_rendered or _text)
 
         else:
             # 普通用户查自己
@@ -153,7 +156,9 @@ async def handle_list(bot: Bot, event: MessageEvent, args: Message = CommandArg(
             if note:
                 lines.append(f"  备注：{note}")
 
-            await cmd_list.finish("\n".join(lines))
+            _text = "\n".join(lines)
+            _rendered = await maybe_render(_text, "list", session)
+            await cmd_list.finish(_rendered or _text)
 
 
 # ---- /进度查询 ----
@@ -195,7 +200,9 @@ async def handle_progress(bot: Bot, event: MessageEvent, args: Message = Command
                 if note:
                     lines.append(f"  备注：{note}")
 
-            await cmd_progress.finish("\n".join(lines))
+            _text = "\n".join(lines)
+            _rendered = await maybe_render(_text, "progress", session)
+            await cmd_progress.finish(_rendered or _text)
 
         else:
             sender_qq = event.get_user_id()
@@ -226,7 +233,9 @@ async def handle_progress(bot: Bot, event: MessageEvent, args: Message = Command
             if note:
                 lines.append(f"  备注：{note}")
 
-            await cmd_progress.finish("\n".join(lines))
+            _text = "\n".join(lines)
+            _rendered = await maybe_render(_text, "progress", session)
+            await cmd_progress.finish(_rendered or _text)
 
 
 # ---- /代肝留言 ----
@@ -452,6 +461,15 @@ async def handle_help(bot: Bot, event: MessageEvent, args: Message = CommandArg(
             "    （按游戏组显示应得次数，按游戏显示已完成与今日打卡）\n"
             "  /进度查询\n"
             "    查看自己今日各游戏打卡状态\n"
+            "    （管理员设置了当日备注时，列表/进度/提醒中会一并展示）\n"
+            "\n"
+            "【定时提醒】\n"
+            "  /代肝提醒开启 [HH:MM]\n"
+            "    开启每日代肝提醒，可指定推送时间（默认 22:00）\n"
+            "  /代肝提醒关闭\n"
+            "    关闭每日代肝提醒\n"
+            "  /代肝提醒状态\n"
+            "    查看自己的提醒状态与今日是否已推送\n"
             "\n"
             "【留言】\n"
             "  /代肝留言 游戏名 内容\n"
@@ -469,4 +487,8 @@ async def handle_help(bot: Bot, event: MessageEvent, args: Message = CommandArg(
             "请联系管理员操作。"
         )
 
-    await cmd_help.finish(msg)
+    from ..webui.render import maybe_render as _mr
+
+    async with get_session() as session:
+        rendered = await _mr(msg, "help", session)
+    await cmd_help.finish(rendered or msg)

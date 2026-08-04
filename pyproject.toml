@@ -28,3 +28,7 @@ auth = [
     "aiosmtplib>=5.0",
     "authlib>=1.0",
 ]
+# 消息文转图（Playwright，需手动 playwright install chromium）
+render = [
+    "playwright>=1.40",
+]

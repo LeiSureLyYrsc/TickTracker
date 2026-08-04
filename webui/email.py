@@ -36,6 +36,7 @@ async def _get_smtp_config(session) -> dict:
 async def send_email(to: str, subject: str, text: str) -> None:
     """发送邮件"""
     import aiosmtplib
+    from email.message import EmailMessage
 
     async with get_session() as session:
         cfg = await _get_smtp_config(session)
@@ -43,12 +44,17 @@ async def send_email(to: str, subject: str, text: str) -> None:
     if not cfg["host"] or not cfg["from"]:
         raise EmailNotConfiguredError("邮箱服务未配置")
 
+    message = EmailMessage()
+    message["From"] = cfg["from"]
+    message["To"] = to
+    message["Subject"] = subject
+    message.set_content(text)
+
     security = cfg["security"] or "starttls"
     await aiosmtplib.send(
-        subject=subject,
-        message=text,
-        from_addr=cfg["from"],
-        to_addrs=[to],
+        message,
+        sender=cfg["from"],
+        recipients=[to],
         hostname=cfg["host"],
         port=cfg["port"],
         username=cfg["user"] or None,

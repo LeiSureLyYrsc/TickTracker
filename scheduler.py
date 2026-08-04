@@ -9,6 +9,7 @@ from sqlalchemy import delete, select, update
 from .database import get_session
 from .models import Commission, DailyNote, ReminderSetting, User
 from .webui.reminder import build_reminder_message
+from .webui.render import maybe_render
 
 _scheduler: AsyncIOScheduler | None = None
 
@@ -65,12 +66,13 @@ async def _send_reminders() -> None:
                     await session.execute(select(User).where(User.id == user_id))
                 ).scalar_one()
                 message = await build_reminder_message(session, user)
+                payload = await maybe_render(message, "reminder", session)
                 rs = (
                     await session.execute(
                         select(ReminderSetting).where(ReminderSetting.id == rs_id)
                     )
                 ).scalar_one()
-                await bot.send_private_msg(user_id=qq_id, message=message)
+                await bot.send_private_msg(user_id=qq_id, message=payload or message)
                 rs.last_sent_date = today
         except Exception as e:
             logger.warning(f"[代肝追踪] 提醒推送失败 user_id={user_id}: {e}")

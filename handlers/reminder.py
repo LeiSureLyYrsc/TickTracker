@@ -16,6 +16,7 @@ from ..webui.reminder import (
     get_template,
     set_template,
 )
+from ..webui.render import maybe_render
 from ..webui.utils import audit
 from .admin import find_user
 
@@ -95,6 +96,35 @@ async def handle_reminder_off(bot: Bot, event: MessageEvent, args: Message = Com
             await audit(session, "qq", sender_qq, "关闭定时提醒", target=f"用户「{user.name}」")
             await cmd_reminder_off.finish("已关闭每日代肝提醒")
         await cmd_reminder_off.finish("您当前未开启定时提醒")
+
+
+cmd_reminder_time = on_command("代肝提醒时间", priority=5, block=True)
+
+
+@cmd_reminder_time.handle()
+async def handle_reminder_time(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
+    """ /代肝提醒时间 HH:MM - 修改自己的提醒时间（需已开启提醒） """
+    push_time = args.extract_plain_text().strip()
+    if not push_time:
+        await cmd_reminder_time.finish("用法：/代肝提醒时间 HH:MM，例如 22:00")
+    if not TIME_RE.match(push_time):
+        await cmd_reminder_time.finish("时间格式应为 HH:MM，例如 22:00")
+
+    sender_qq = event.get_user_id()
+    async with get_session() as session:
+        user = (
+            await session.execute(select(User).where(User.qq_id == int(sender_qq)))
+        ).scalar_one_or_none()
+        if not user:
+            await cmd_reminder_time.finish("您未绑定账号，请联系管理员使用 /代肝绑定 绑定您的QQ号")
+        rs = (
+            await session.execute(select(ReminderSetting).where(ReminderSetting.user_id == user.id))
+        ).scalar_one_or_none()
+        if not rs or not rs.enabled:
+            await cmd_reminder_time.finish("请先开启提醒（/代肝提醒开启），再修改提醒时间")
+        rs.push_time = push_time
+        await audit(session, "qq", sender_qq, "修改提醒时间", target=f"用户「{user.name}」", detail=f"time={push_time}")
+        await cmd_reminder_time.finish(f"已将提醒时间修改为 {push_time}")
 
 
 # ---- 管理员：设置 / 移除 / 状态 / 模板 / 测试 ----
@@ -244,8 +274,9 @@ async def handle_reminder_test(bot: Bot, event: MessageEvent, args: Message = Co
                 {"name": "admin", "done": 0, "total": 0, "list": "", "note": "无备注"},
             )
         try:
+            payload = await maybe_render(message, "reminder", session)
             await bot.send_private_msg(
-                user_id=int(event.get_user_id()), message=f"[预览]\n{message}"
+                user_id=int(event.get_user_id()), message=payload or f"[预览]\n{message}"
             )
         except Exception as e:
             await cmd_reminder_test.finish(f"推送失败：{e}")

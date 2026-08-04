@@ -68,7 +68,9 @@ async def _on_shutdown():
 
     from .database import close_db
     from .scheduler import stop_scheduler
+    from .webui.render import close_renderer
 
     stop_scheduler()
+    await close_renderer()
     await close_db()
     logger.info("[代肝追踪] 插件已关闭")

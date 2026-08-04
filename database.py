@@ -41,6 +41,13 @@ COLUMN_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         ("passkey_rp_ids", "TEXT DEFAULT '[]'"),
         ("passkey_allow_http", "BOOLEAN DEFAULT 0"),
         ("reminder_template", "TEXT"),
+        ("render_enabled_help", "BOOLEAN DEFAULT 0"),
+        ("render_enabled_list", "BOOLEAN DEFAULT 0"),
+        ("render_enabled_progress", "BOOLEAN DEFAULT 0"),
+        ("render_enabled_reminder", "BOOLEAN DEFAULT 0"),
+        ("render_template", "VARCHAR(16) DEFAULT 'shadcn'"),
+        ("render_font", "VARCHAR(128) DEFAULT ''"),
+        ("render_font_dir", "VARCHAR(256) DEFAULT './data/fonts'"),
     ],
 }
 

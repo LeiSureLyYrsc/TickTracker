@@ -22,16 +22,18 @@ from ..oidc import (
     verify_id_token,
 )
 from ..utils import audit, get_client_ip
-from .auth import require_admin
+from .auth import require_admin, require_user
 
 router = APIRouter(prefix="/api/oidc", tags=["oidc"])
 
-# 内存 state / 一次性会话码
+# 内存 state / 一次性会话码 / 绑定码
 _states: dict[str, dict] = {}
 _sessions: dict[str, dict] = {}
+_link_codes: dict[str, int] = {}
 
 STATE_TTL = 600
 SESSION_TTL = 300
+LINK_CODE_TTL = 600
 
 
 class ProviderRequest(BaseModel):
@@ -66,9 +68,8 @@ async def public_providers():
     ]
 
 
-@router.get("/login/{provider_id}")
-async def oidc_login(provider_id: str, request: Request, redirect: str = ""):
-    """发起 OIDC 登录，跳转到提供商"""
+def _start_flow(request: Request, provider_id: str, mode: str = "login", user_id: int | None = None):
+    """生成 OIDC 授权跳转（登录或绑定）"""
     provider = _find_provider(provider_id)
     if not provider or not provider.get("enabled"):
         raise HTTPException(status_code=404, detail="登录方式不存在或未启用")
@@ -81,7 +82,9 @@ async def oidc_login(provider_id: str, request: Request, redirect: str = ""):
     _states[state] = {
         "provider_id": provider_id,
         "redirect_uri": redirect_uri,
-        "frontend_redirect": redirect,
+        "frontend_redirect": "",
+        "mode": mode,
+        "user_id": user_id,
         "exp": time.time() + STATE_TTL,
     }
 
@@ -94,6 +97,75 @@ async def oidc_login(provider_id: str, request: Request, redirect: str = ""):
     }
     url = provider["authorization_endpoint"] + ("&" if "?" in provider["authorization_endpoint"] else "?") + urlencode(params)
     return RedirectResponse(url)
+
+
+@router.get("/login/{provider_id}")
+async def oidc_login(provider_id: str, request: Request, redirect: str = ""):
+    """发起 OIDC 登录，跳转到提供商"""
+    return _start_flow(request, provider_id, mode="login")
+
+
+@router.post("/link/start/{provider_id}")
+async def oidc_link_start(provider_id: str, payload: dict = Depends(require_user)):
+    """在当前账号下开始绑定 SSO 登录方式，返回跳转地址"""
+    provider = _find_provider(provider_id)
+    if not provider or not provider.get("enabled"):
+        raise HTTPException(status_code=404, detail="登录方式不存在或未启用")
+    if not provider.get("client_id") or not provider.get("authorization_endpoint"):
+        raise HTTPException(status_code=400, detail="该登录方式配置不完整")
+
+    code = secrets.token_urlsafe(24)
+    _link_codes[code] = int(payload.get("sub"))
+    return {"url": f"/api/oidc/link/{provider_id}?code={code}"}
+
+
+@router.get("/link/{provider_id}")
+async def oidc_link(provider_id: str, request: Request, code: str = ""):
+    """校验绑定码后跳转提供商授权（浏览器导航，不带 Authorization 头）"""
+    user_id = _link_codes.pop(code, None)
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="绑定链接无效或已过期")
+    return _start_flow(request, provider_id, mode="link", user_id=user_id)
+
+
+@router.get("/my-bindings")
+async def my_oidc_bindings(payload: dict = Depends(require_user)):
+    """当前账号已绑定的 OIDC 提供商"""
+    user_id = int(payload.get("sub"))
+    providers = {p["id"]: p for p in load_providers()}
+    async with get_session() as session:
+        result = await session.execute(
+            select(OidcBinding).where(OidcBinding.user_id == user_id)
+        )
+        return [
+            {
+                "provider_id": b.provider_id,
+                "provider_name": providers.get(b.provider_id, {}).get("name", b.provider_id),
+                "icon": providers.get(b.provider_id, {}).get("icon", "generic"),
+                "icon_url": providers.get(b.provider_id, {}).get("icon_url"),
+                "email": b.email,
+                "name": b.name,
+                "created_at": b.created_at.isoformat() if b.created_at else None,
+            }
+            for b in result.scalars().all()
+        ]
+
+
+@router.delete("/bindings/{provider_id}")
+async def unlink_oidc(provider_id: str, payload: dict = Depends(require_user)):
+    """解绑当前账号下的 SSO 登录方式"""
+    user_id = int(payload.get("sub"))
+    async with get_session() as session:
+        result = await session.execute(
+            select(OidcBinding).where(
+                OidcBinding.user_id == user_id, OidcBinding.provider_id == provider_id
+            )
+        )
+        binding = result.scalar_one_or_none()
+        if not binding:
+            raise HTTPException(status_code=404, detail="未绑定该登录方式")
+        await session.delete(binding)
+    return {"message": "已解绑"}
 
 
 @router.get("/callback")
@@ -133,11 +205,41 @@ async def oidc_callback(code: str = "", state: str = "", error: str = "", error_
     except Exception:
         raise HTTPException(status_code=400, detail="ID Token 校验失败")
 
+    sub = str(claims.get("sub", ""))
+    if not sub:
+        raise HTTPException(status_code=400, detail="ID Token 缺少 sub")
+
+    # 绑定模式：将 SSO 账号绑定到当前用户（不登录）
+    if meta.get("mode") == "link":
+        target_user_id = meta.get("user_id")
+        email = claims.get("email")
+        async with get_session() as session:
+            existing = await session.execute(
+                select(OidcBinding).where(
+                    OidcBinding.provider_id == provider["id"], OidcBinding.sub == sub
+                )
+            )
+            b = existing.scalar_one_or_none()
+            if b and b.user_id != target_user_id:
+                raise HTTPException(status_code=400, detail="该第三方账号已绑定其他用户")
+            if not b:
+                session.add(
+                    OidcBinding(
+                        provider_id=provider["id"],
+                        sub=sub,
+                        user_id=target_user_id,
+                        email=email,
+                        name=claims.get("name"),
+                    )
+                )
+            await audit(
+                session, "user", f"用户#{target_user_id}",
+                "绑定 SSO", target=provider.get("name"), detail=f"sub={sub}",
+            )
+        return RedirectResponse("/oidc/link-callback?ok=1")
+
     # 关联 / 注册
     async with get_session() as session:
-        sub = str(claims.get("sub", ""))
-        if not sub:
-            raise HTTPException(status_code=400, detail="ID Token 缺少 sub")
         result = await session.execute(
             select(OidcBinding).where(
                 OidcBinding.provider_id == provider["id"], OidcBinding.sub == sub

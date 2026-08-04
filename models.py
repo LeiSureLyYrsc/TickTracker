@@ -289,6 +289,18 @@ class SystemSettings(Base):
     # 定时提醒消息模板
     reminder_template: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ---- 消息渲染（文转图） ----
+    render_enabled_help: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    render_enabled_list: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    render_enabled_progress: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    render_enabled_reminder: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 页面模板：shadcn / apple / material / shell
+    render_template: Mapped[str] = mapped_column(String(16), default="shadcn", nullable=False)
+    # 自定义字体文件名（空=系统字体），族名为去掉扩展名的文件名
+    render_font: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    # 字体目录（默认 ./data/fonts，仅本地无头浏览器加载，不对外提供）
+    render_font_dir: Mapped[str] = mapped_column(String(256), default="./data/fonts", nullable=False)
+
 
 class AuditLog(Base):
     """审计日志表"""

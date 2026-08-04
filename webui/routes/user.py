@@ -1,4 +1,6 @@
 ﻿"""用户 API 路由"""
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -7,24 +9,24 @@ from sqlalchemy.orm import selectinload
 from ...database import get_session
 from ...models import (
     Commission,
+    DailyNote,
     Game,
     GameGroup,
     GroupCommission,
     Message,
+    ReminderSetting,
     User,
 )
 from ..routes.auth import require_user
 from ..utils import audit, get_client_ip
+from .reminders import TIME_RE
 
 router = APIRouter(prefix="/api/user", tags=["user"])
 
 
 @router.get("/me/commissions")
 async def get_my_commissions(payload: dict = Depends(require_user)):
-    """获取当前用户的代肝记录（管理员查看时返回空）"""
-    if payload.get("role") == "admin":
-        return []
-
+    """获取当前用户的代肝记录"""
     user_id = int(payload.get("sub"))
 
     async with get_session() as session:
@@ -55,10 +57,7 @@ async def get_my_commissions(payload: dict = Depends(require_user)):
 
 @router.get("/me/group-commissions")
 async def get_my_group_commissions(payload: dict = Depends(require_user)):
-    """获取当前用户在游戏组下的应得次数（管理员查看时返回空）"""
-    if payload.get("role") == "admin":
-        return []
-
+    """获取当前用户在游戏组下的应得次数"""
     user_id = int(payload.get("sub"))
 
     async with get_session() as session:
@@ -81,10 +80,7 @@ async def get_my_group_commissions(payload: dict = Depends(require_user)):
 
 @router.get("/me/progress")
 async def get_my_progress(payload: dict = Depends(require_user)):
-    """获取当前用户今日打卡进度（管理员查看时返回空）"""
-    if payload.get("role") == "admin":
-        return []
-
+    """获取当前用户今日打卡进度"""
     user_id = int(payload.get("sub"))
 
     async with get_session() as session:
@@ -112,10 +108,7 @@ async def get_my_progress(payload: dict = Depends(require_user)):
 
 @router.get("/me/messages")
 async def get_my_messages(payload: dict = Depends(require_user)):
-    """获取当前用户的历史留言（含已读状态，管理员查看时返回空）"""
-    if payload.get("role") == "admin":
-        return []
-
+    """获取当前用户的历史留言（含已读状态）"""
     user_id = int(payload.get("sub"))
 
     async with get_session() as session:
@@ -138,6 +131,97 @@ async def get_my_messages(payload: dict = Depends(require_user)):
         ]
 
 
+@router.get("/me/note")
+async def get_my_note(payload: dict = Depends(require_user)):
+    """获取当前用户当日备注"""
+    user_id = int(payload.get("sub"))
+    today = datetime.now().strftime("%Y-%m-%d")
+    async with get_session() as session:
+        result = await session.execute(
+            select(DailyNote).where(
+                DailyNote.user_id == user_id, DailyNote.note_date == today
+            )
+        )
+        note = result.scalar_one_or_none()
+        return {"content": note.content if note else ""}
+
+
+class ReminderRequest(BaseModel):
+    enabled: bool | None = None
+    push_time: str | None = None
+
+
+@router.get("/me/reminder")
+async def get_my_reminder(payload: dict = Depends(require_user)):
+    """获取当前用户的定时提醒设置"""
+    user_id = int(payload.get("sub"))
+    async with get_session() as session:
+        result = await session.execute(
+            select(ReminderSetting).where(ReminderSetting.user_id == user_id)
+        )
+        rs = result.scalar_one_or_none()
+        if not rs:
+            return {"enabled": False, "push_time": "22:00", "last_sent_date": None}
+        return {
+            "enabled": rs.enabled,
+            "push_time": rs.push_time,
+            "last_sent_date": rs.last_sent_date,
+        }
+
+
+@router.put("/me/reminder")
+async def update_my_reminder(
+    body: ReminderRequest, request: Request, payload: dict = Depends(require_user)
+):
+    """启用/关闭提醒或修改推送时间"""
+    user_id = int(payload.get("sub"))
+    async with get_session() as session:
+        user = (
+            await session.execute(select(User).where(User.id == user_id))
+        ).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+
+        result = await session.execute(
+            select(ReminderSetting).where(ReminderSetting.user_id == user_id)
+        )
+        rs = result.scalar_one_or_none()
+
+        if body.push_time is not None and not TIME_RE.match(body.push_time):
+            raise HTTPException(status_code=400, detail="推送时间格式应为 HH:MM（如 22:00）")
+
+        enabled = body.enabled if body.enabled is not None else (rs.enabled if rs else False)
+        push_time = body.push_time if body.push_time is not None else (rs.push_time if rs else "22:00")
+
+        # 启用时需要资格：绑定 QQ + 有代肝数据
+        if enabled and not (rs and rs.enabled):
+            if not user.qq_id:
+                raise HTTPException(status_code=400, detail="您未绑定 QQ，无法启用提醒")
+            has = await session.execute(
+                select(Commission.id).where(Commission.user_id == user.id).limit(1)
+            )
+            if has.scalar_one_or_none() is None:
+                raise HTTPException(status_code=400, detail="您没有代肝数据，无法启用提醒")
+
+        if rs:
+            rs.enabled = enabled
+            rs.push_time = push_time
+        else:
+            rs = ReminderSetting(user_id=user.id, enabled=enabled, push_time=push_time)
+            session.add(rs)
+        await session.flush()
+        await audit(
+            session, "user", user.name, "更新提醒设置",
+            detail=f"enabled={enabled} time={push_time}",
+            ip=await get_client_ip(request, session),
+        )
+        return {
+            "enabled": rs.enabled,
+            "push_time": rs.push_time,
+            "last_sent_date": rs.last_sent_date,
+        }
+
+
 class SendMessageRequest(BaseModel):
     game_name: str
     content: str
@@ -148,9 +232,6 @@ async def send_message(
     body: SendMessageRequest, request: Request, payload: dict = Depends(require_user)
 ):
     """用户发送留言给管理员"""
-    if payload.get("role") == "admin":
-        raise HTTPException(status_code=403, detail="管理员无需通过此接口留言")
-
     user_id = int(payload.get("sub"))
 
     async with get_session() as session:
@@ -213,9 +294,7 @@ async def send_message(
 
 @router.get("/games")
 async def list_games_for_user(payload: dict = Depends(require_user)):
-    """获取当前用户已绑定代肝记录的游戏列表（供留言时选择，管理员查看时返回空）"""
-    if payload.get("role") == "admin":
-        return []
+    """获取当前用户已绑定代肝记录的游戏列表（供留言时选择）"""
     user_id = int(payload.get("sub"))
     async with get_session() as session:
         result = await session.execute(

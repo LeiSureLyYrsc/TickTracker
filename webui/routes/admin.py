@@ -21,6 +21,7 @@ from ...models import (
 )
 from ...handlers.admin import find_user, find_game
 from ..routes.auth import require_admin
+from ..render import list_font_files
 from ..utils import audit, get_client_ip
 
 from sqlalchemy.orm import selectinload
@@ -852,10 +853,10 @@ async def test_email(body: EmailTestRequest, request: Request, _: dict = Depends
         raise HTTPException(status_code=400, detail="收件邮箱格式不正确")
     try:
         await send_email(target, "代肝记录系统 - 测试邮件", "这是一封测试邮件，若您收到说明邮箱服务配置正确。")
-    except EmailNotConfiguredError:
-        raise HTTPException(status_code=400, detail="邮箱服务未配置，请先填写 SMTP 信息")
-    except Exception:
-        raise HTTPException(status_code=500, detail="发送失败，请检查 SMTP 配置")
+    except EmailNotConfiguredError as e:
+        raise HTTPException(status_code=400, detail=str(e) or "邮箱服务未配置")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"发送失败：{e}")
     async with get_session() as session:
         await audit(
             session, "admin", "admin", "测试邮件",
@@ -878,6 +879,13 @@ class UpdateSettingsRequest(BaseModel):
     passkey_enabled: Optional[bool] = None
     passkey_rp_ids: Optional[list[str]] = None
     passkey_allow_http: Optional[bool] = None
+    render_enabled_help: Optional[bool] = None
+    render_enabled_list: Optional[bool] = None
+    render_enabled_progress: Optional[bool] = None
+    render_enabled_reminder: Optional[bool] = None
+    render_template: Optional[str] = None
+    render_font: Optional[str] = None
+    render_font_dir: Optional[str] = None
 
 
 def _settings_to_dict(s) -> dict:
@@ -901,6 +909,13 @@ def _settings_to_dict(s) -> dict:
         "passkey_enabled": s.passkey_enabled,
         "passkey_rp_ids": rp_ids,
         "passkey_allow_http": s.passkey_allow_http,
+        "render_enabled_help": s.render_enabled_help,
+        "render_enabled_list": s.render_enabled_list,
+        "render_enabled_progress": s.render_enabled_progress,
+        "render_enabled_reminder": s.render_enabled_reminder,
+        "render_template": s.render_template,
+        "render_font": s.render_font,
+        "render_font_dir": s.render_font_dir,
     }
 
 
@@ -946,6 +961,13 @@ async def update_settings(body: UpdateSettingsRequest, request: Request, _: dict
             "allow_forgot_password",
             "passkey_enabled",
             "passkey_allow_http",
+            "render_enabled_help",
+            "render_enabled_list",
+            "render_enabled_progress",
+            "render_enabled_reminder",
+            "render_template",
+            "render_font",
+            "render_font_dir",
         ]:
             value = getattr(body, field)
             if value is not None:
@@ -964,6 +986,37 @@ async def update_settings(body: UpdateSettingsRequest, request: Request, _: dict
             ip=await get_client_ip(request, session),
         )
         return _settings_to_dict(settings)
+
+
+# ---- 字体（文转图） ----
+
+async def _current_font_dir(session) -> str:
+    result = await session.execute(
+        select(SystemSettings).where(SystemSettings.id == 1)
+    )
+    s = result.scalar_one_or_none()
+    return (s.render_font_dir if s else None) or "./data/fonts"
+
+
+@router.get("/fonts")
+async def list_fonts(_: dict = Depends(require_admin)):
+    """列出字体目录中的字体文件"""
+    async with get_session() as session:
+        font_dir = await _current_font_dir(session)
+        return {"dir": font_dir, "fonts": list_font_files(font_dir)}
+
+
+@router.post("/fonts/reload")
+async def reload_fonts(request: Request, _: dict = Depends(require_admin)):
+    """重新扫描字体目录"""
+    async with get_session() as session:
+        font_dir = await _current_font_dir(session)
+        fonts = list_font_files(font_dir)
+        await audit(
+            session, "admin", "admin", "刷新字体列表",
+            detail=f"count={len(fonts)}", ip=await get_client_ip(request, session),
+        )
+    return {"dir": font_dir, "fonts": fonts}
 
 
 # ---- 审计日志 ----
