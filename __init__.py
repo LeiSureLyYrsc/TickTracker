@@ -39,7 +39,7 @@ __plugin_meta__ = PluginMetadata(
 config = get_plugin_config(Config)
 driver = get_driver()
 
-from .handlers import admin, user  # noqa: E402, F401
+from .handlers import admin, reminder, user  # noqa: E402, F401
 
 
 @driver.on_startup

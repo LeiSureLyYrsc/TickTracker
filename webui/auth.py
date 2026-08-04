@@ -43,9 +43,11 @@ def decode_token(token: str, secret: str) -> Optional[dict]:
         return None
 
 
-def create_admin_token(secret: str) -> str:
+def create_admin_token(user_id: int, user_name: str, secret: str) -> str:
     """创建管理员 JWT token"""
-    return create_token({"role": "admin", "sub": "admin"}, secret)
+    return create_token(
+        {"role": "admin", "sub": str(user_id), "name": user_name}, secret
+    )
 
 
 def create_user_token(user_id: int, user_name: str, secret: str) -> str:

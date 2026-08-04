@@ -1,5 +1,5 @@
-"""用户 API 路由"""
-from fastapi import APIRouter, Depends, HTTPException
+﻿"""用户 API 路由"""
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -14,15 +14,16 @@ from ...models import (
     User,
 )
 from ..routes.auth import require_user
+from ..utils import audit, get_client_ip
 
 router = APIRouter(prefix="/api/user", tags=["user"])
 
 
 @router.get("/me/commissions")
 async def get_my_commissions(payload: dict = Depends(require_user)):
-    """获取当前用户的代肝记录"""
+    """获取当前用户的代肝记录（管理员查看时返回空）"""
     if payload.get("role") == "admin":
-        raise HTTPException(status_code=403, detail="管理员请使用 /api/admin/ 接口")
+        return []
 
     user_id = int(payload.get("sub"))
 
@@ -54,9 +55,9 @@ async def get_my_commissions(payload: dict = Depends(require_user)):
 
 @router.get("/me/group-commissions")
 async def get_my_group_commissions(payload: dict = Depends(require_user)):
-    """获取当前用户在游戏组下的应得次数"""
+    """获取当前用户在游戏组下的应得次数（管理员查看时返回空）"""
     if payload.get("role") == "admin":
-        raise HTTPException(status_code=403, detail="管理员请使用 /api/admin/ 接口")
+        return []
 
     user_id = int(payload.get("sub"))
 
@@ -80,9 +81,9 @@ async def get_my_group_commissions(payload: dict = Depends(require_user)):
 
 @router.get("/me/progress")
 async def get_my_progress(payload: dict = Depends(require_user)):
-    """获取当前用户今日打卡进度"""
+    """获取当前用户今日打卡进度（管理员查看时返回空）"""
     if payload.get("role") == "admin":
-        raise HTTPException(status_code=403, detail="管理员请使用 /api/admin/ 接口")
+        return []
 
     user_id = int(payload.get("sub"))
 
@@ -109,6 +110,34 @@ async def get_my_progress(payload: dict = Depends(require_user)):
         ]
 
 
+@router.get("/me/messages")
+async def get_my_messages(payload: dict = Depends(require_user)):
+    """获取当前用户的历史留言（含已读状态，管理员查看时返回空）"""
+    if payload.get("role") == "admin":
+        return []
+
+    user_id = int(payload.get("sub"))
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(Message, Game)
+            .join(Game, Message.game_id == Game.id)
+            .where(Message.user_id == user_id)
+            .order_by(Message.created_at.desc())
+        )
+        records = result.all()
+        return [
+            {
+                "id": m.id,
+                "game_name": g.name,
+                "content": m.content,
+                "created_at": m.created_at.isoformat(),
+                "is_read": m.is_read,
+            }
+            for m, g in records
+        ]
+
+
 class SendMessageRequest(BaseModel):
     game_name: str
     content: str
@@ -116,7 +145,7 @@ class SendMessageRequest(BaseModel):
 
 @router.post("/me/messages")
 async def send_message(
-    body: SendMessageRequest, payload: dict = Depends(require_user)
+    body: SendMessageRequest, request: Request, payload: dict = Depends(require_user)
 ):
     """用户发送留言给管理员"""
     if payload.get("role") == "admin":
@@ -150,6 +179,16 @@ async def send_message(
         user_result = await session.execute(select(User).where(User.id == user_id))
         user = user_result.scalar_one_or_none()
 
+        await audit(
+            session,
+            "user",
+            user.name if user else f"用户#{user_id}",
+            "发送留言",
+            target=f"游戏「{game.name}」",
+            detail=body.content[:100],
+            ip=await get_client_ip(request, session),
+        )
+
     if user:
         try:
             import nonebot
@@ -174,7 +213,9 @@ async def send_message(
 
 @router.get("/games")
 async def list_games_for_user(payload: dict = Depends(require_user)):
-    """获取当前用户已绑定代肝记录的游戏列表（供留言时选择）"""
+    """获取当前用户已绑定代肝记录的游戏列表（供留言时选择，管理员查看时返回空）"""
+    if payload.get("role") == "admin":
+        return []
     user_id = int(payload.get("sub"))
     async with get_session() as session:
         result = await session.execute(

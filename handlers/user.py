@@ -20,6 +20,20 @@ from ..models import (
     User,
 )
 from ..handlers.admin import find_game, find_user
+from ..webui.utils import audit
+from ..models import DailyNote
+
+
+async def _today_note(session, user_id: int) -> str:
+    """获取用户当日备注（无则返回空字符串）"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = await session.execute(
+        select(DailyNote).where(
+            DailyNote.user_id == user_id, DailyNote.note_date == today
+        )
+    )
+    note = result.scalar_one_or_none()
+    return note.content if note else ""
 
 
 async def _grouped_user_commissions(session, user):
@@ -101,6 +115,10 @@ async def handle_list(bot: Bot, event: MessageEvent, args: Message = CommandArg(
                 else:
                     lines.append("  （暂无代肝记录）")
 
+                note = await _today_note(session, user.id)
+                if note:
+                    lines.append(f"  备注：{note}")
+
             await cmd_list.finish("\n".join(lines))
 
         else:
@@ -130,6 +148,10 @@ async def handle_list(bot: Bot, event: MessageEvent, args: Message = CommandArg(
                         )
             else:
                 lines.append("  （暂无代肝记录）")
+
+            note = await _today_note(session, user.id)
+            if note:
+                lines.append(f"  备注：{note}")
 
             await cmd_list.finish("\n".join(lines))
 
@@ -169,6 +191,10 @@ async def handle_progress(bot: Bot, event: MessageEvent, args: Message = Command
                         checked_s = "✓ 已完成" if comm.checked_in else "✗ 未完成"
                         lines.append(f"    {game.name}: {checked_s}")
 
+                note = await _today_note(session, user.id)
+                if note:
+                    lines.append(f"  备注：{note}")
+
             await cmd_progress.finish("\n".join(lines))
 
         else:
@@ -195,6 +221,10 @@ async def handle_progress(bot: Bot, event: MessageEvent, args: Message = Command
                         lines.append(f"    {game.name}: {checked_s}")
             else:
                 lines.append("  （暂无代肝记录）")
+
+            note = await _today_note(session, user.id)
+            if note:
+                lines.append(f"  备注：{note}")
 
             await cmd_progress.finish("\n".join(lines))
 
@@ -237,6 +267,14 @@ async def handle_message(bot: Bot, event: MessageEvent, args: Message = CommandA
         msg = MsgModel(user_id=user.id, game_id=game.id, content=content)
         session.add(msg)
         await session.flush()
+        await audit(
+            session,
+            "qq",
+            sender_qq,
+            "发送留言",
+            target=f"游戏「{game.name}」",
+            detail=content[:100],
+        )
 
     # 向所有超级用户发送私聊消息
     from nonebot import get_driver
@@ -287,6 +325,10 @@ async def handle_login(bot: Bot, event: MessageEvent, args: Message = CommandArg
             await cmd_login.finish(
                 "您未绑定账号，请联系管理员使用 /代肝绑定 绑定您的QQ号"
             )
+        if user.login_disabled:
+            await cmd_login.finish(
+                "您的账号已被停用 WebUI 登录，请联系管理员"
+            )
 
         # 生成6位数字验证码
         code = "".join(random.choices(string.digits, k=6))
@@ -310,6 +352,13 @@ async def handle_login(bot: Bot, event: MessageEvent, args: Message = CommandArg
             is_used=False,
         )
         session.add(login_code)
+        await audit(
+            session,
+            "qq",
+            sender_qq,
+            "获取登录验证码",
+            target=f"用户「{user.name}」",
+        )
 
     expire_min = config.commision_tracker_code_expire // 60
     server_url = config.commision_tracker_server_url

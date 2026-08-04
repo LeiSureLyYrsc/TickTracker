@@ -13,6 +13,12 @@ from nonebot.log import logger
 from .routes.auth import router as auth_router
 from .routes.admin import router as admin_router
 from .routes.user import router as user_router
+from .routes.profile import router as profile_router
+from .routes.email import router as email_router
+from .routes.passkey import router as passkey_router
+from .routes.oidc import router as oidc_router
+from .routes.reminders import router as reminders_router
+from .utils import avatar_dir
 
 # 静态文件目录（Astro 构建产物）
 FRONTEND_DIR = Path(__file__).parent / "frontend"
@@ -42,6 +48,19 @@ def create_app(jwt_secret: str) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(admin_router)
     app.include_router(user_router)
+    app.include_router(profile_router)
+    app.include_router(email_router)
+    app.include_router(passkey_router)
+    app.include_router(oidc_router)
+    app.include_router(reminders_router)
+
+    # 挂载头像静态目录（公开访问，供 <img> 使用）
+    try:
+        ad = avatar_dir()
+        if ad.exists():
+            app.mount("/avatars", StaticFiles(directory=str(ad)), name="avatars")
+    except Exception:
+        pass
 
     # 挂载静态文件
     if FRONTEND_DIR.exists():

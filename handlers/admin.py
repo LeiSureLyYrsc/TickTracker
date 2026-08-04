@@ -11,7 +11,6 @@ from sqlalchemy import delete, select, update
 
 from ..database import get_session
 from ..models import (
-    AuthSettings,
     Commission,
     Game,
     GameAlias,
@@ -21,6 +20,7 @@ from ..models import (
     UserAlias,
 )
 from ..webui.auth import hash_password
+from ..webui.utils import audit
 
 # ---- 权限 ----
 ADMIN_PERM = SUPERUSER
@@ -125,6 +125,7 @@ async def handle_create(bot: Bot, event: MessageEvent, args: Message = CommandAr
             if existing.scalar_one_or_none():
                 await cmd_create.finish(f"用户「{name}」已存在")
             session.add(User(name=name))
+            await audit(session, "qq", event.get_user_id(), "创建用户", target=f"用户「{name}」")
             await cmd_create.finish(f"已创建用户「{name}」")
 
         elif entity_type == "游戏":
@@ -138,6 +139,7 @@ async def handle_create(bot: Bot, event: MessageEvent, args: Message = CommandAr
             if not grp:
                 await cmd_create.finish(f"未找到游戏组「{group_name}」")
             session.add(Game(name=name, group_id=grp.id))
+            await audit(session, "qq", event.get_user_id(), "创建游戏", target=f"游戏「{name}」", detail=f"游戏组「{grp.name}」")
             await cmd_create.finish(f"已创建游戏「{name}」并归入游戏组「{grp.name}」")
 
         else:
@@ -161,6 +163,7 @@ async def handle_group_create(bot: Bot, event: MessageEvent, args: Message = Com
         if existing.scalar_one_or_none():
             await cmd_group_create.finish(f"游戏组「{name}」已存在")
         session.add(GameGroup(name=name))
+        await audit(session, "qq", event.get_user_id(), "创建游戏组", target=f"游戏组「{name}」")
         await cmd_group_create.finish(f"已创建游戏组「{name}」")
 
 
@@ -184,6 +187,7 @@ async def handle_group_rename(bot: Bot, event: MessageEvent, args: Message = Com
         if existing.scalar_one_or_none():
             await cmd_group_rename.finish(f"游戏组「{new_name}」已存在")
         grp.name = new_name
+        await audit(session, "qq", event.get_user_id(), "修改游戏组名", target=f"游戏组「{old_name}」", detail=new_name)
         await cmd_group_rename.finish(f"游戏组已改名为「{new_name}」")
 
 
@@ -202,6 +206,7 @@ async def handle_group_delete(bot: Bot, event: MessageEvent, args: Message = Com
         if not grp:
             await cmd_group_delete.finish(f"未找到游戏组「{name}」")
         await session.execute(update(Game).where(Game.group_id == grp.id).values(group_id=None))
+        await audit(session, "qq", event.get_user_id(), "删除游戏组", target=f"游戏组「{name}」")
         await session.delete(grp)
         await cmd_group_delete.finish(f"游戏组「{name}」已删除，组内游戏变为未分组")
 
@@ -226,6 +231,7 @@ async def handle_game_move(bot: Bot, event: MessageEvent, args: Message = Comman
         if not grp:
             await cmd_game_move.finish(f"未找到游戏组「{group_name}」")
         game.group_id = grp.id
+        await audit(session, "qq", event.get_user_id(), "移动游戏", target=f"游戏「{game.name}」", detail=f"游戏组「{grp.name}」")
         await cmd_game_move.finish(f"已将游戏「{game.name}」移入游戏组「{grp.name}」")
 
 
@@ -256,6 +262,7 @@ async def handle_alias_add(bot: Bot, event: MessageEvent, args: Message = Comman
             if existing.scalar_one_or_none():
                 await cmd_alias_add.finish(f"别名「{alias}」已被占用")
             session.add(UserAlias(user_id=user.id, alias=alias))
+            await audit(session, "qq", event.get_user_id(), "添加用户别名", target=f"用户「{user.name}」", detail=f"别名「{alias}」")
             await cmd_alias_add.finish(f"已为用户「{user.name}」添加别名「{alias}」")
 
         # 再尝试查游戏
@@ -267,6 +274,7 @@ async def handle_alias_add(bot: Bot, event: MessageEvent, args: Message = Comman
             if existing.scalar_one_or_none():
                 await cmd_alias_add.finish(f"别名「{alias}」已被占用")
             session.add(GameAlias(game_id=game.id, alias=alias))
+            await audit(session, "qq", event.get_user_id(), "添加游戏别名", target=f"游戏「{game.name}」", detail=f"别名「{alias}」")
             await cmd_alias_add.finish(f"已为游戏「{game.name}」添加别名「{alias}」")
 
         await cmd_alias_add.finish(f"未找到用户或游戏「{target_name}」")
@@ -300,6 +308,7 @@ async def handle_alias_del(bot: Bot, event: MessageEvent, args: Message = Comman
             ua = result.scalar_one_or_none()
             if ua:
                 await session.delete(ua)
+                await audit(session, "qq", event.get_user_id(), "删除用户别名", target=f"用户「{user.name}」", detail=f"别名「{alias}」")
                 await cmd_alias_del.finish(f"已删除用户「{user.name}」的别名「{alias}」")
             else:
                 await cmd_alias_del.finish(f"用户「{user.name}」没有别名「{alias}」")
@@ -315,6 +324,7 @@ async def handle_alias_del(bot: Bot, event: MessageEvent, args: Message = Comman
             ga = result.scalar_one_or_none()
             if ga:
                 await session.delete(ga)
+                await audit(session, "qq", event.get_user_id(), "删除游戏别名", target=f"游戏「{game.name}」", detail=f"别名「{alias}」")
                 await cmd_alias_del.finish(f"已删除游戏「{game.name}」的别名「{alias}」")
             else:
                 await cmd_alias_del.finish(f"游戏「{game.name}」没有别名「{alias}」")
@@ -351,6 +361,7 @@ async def handle_add(bot: Bot, event: MessageEvent, args: Message = CommandArg()
 
         gc = await get_or_create_group_commission(session, user.id, grp.id)
         gc.total_count += count
+        await audit(session, "qq", event.get_user_id(), "添加应得次数", target=f"用户「{user.name}」- 游戏组「{grp.name}」", detail=f"+{count} total={gc.total_count}")
         await cmd_add.finish(
             f"已为用户「{user.name}」的游戏组「{grp.name}」添加 {count} 次应得次数\n"
             f"当前应得次数：{gc.total_count}"
@@ -383,6 +394,7 @@ async def handle_add_game(bot: Bot, event: MessageEvent, args: Message = Command
             await cmd_add_game.finish(f"未找到游戏「{game_name}」")
 
         comm = await get_or_create_commission(session, user.id, game.id)
+        await audit(session, "qq", event.get_user_id(), "添加代肝记录", target=f"用户「{user.name}」- 游戏「{game.name}」")
         await cmd_add_game.finish(
             f"已为用户「{user.name}」添加游戏「{game.name}」的已完成跟踪记录"
         )
@@ -424,6 +436,7 @@ async def handle_delete_group(bot: Bot, event: MessageEvent, args: Message = Com
             await cmd_delete_group.finish(
                 f"用户「{user.name}」在游戏组「{grp.name}」下没有应得记录"
             )
+        await audit(session, "qq", event.get_user_id(), "删除应得记录", target=f"用户「{user.name}」- 游戏组「{grp.name}」", detail=f"total={gc.total_count}")
         await session.delete(gc)
         await cmd_delete_group.finish(
             f"已删除用户「{user.name}」在游戏组「{grp.name}」下的应得记录"
@@ -476,6 +489,7 @@ async def handle_bind(bot: Bot, event: MessageEvent, args: Message = CommandArg(
             await cmd_bind.finish(f"QQ {at_qq} 已绑定到用户「{other.name}」")
 
         user.qq_id = at_qq
+        await audit(session, "qq", event.get_user_id(), "绑定QQ", target=f"用户「{user.name}」", detail=f"qq_id={at_qq}")
         await cmd_bind.finish(f"已将用户「{user.name}」绑定到 QQ {at_qq}")
 
 
@@ -515,6 +529,7 @@ async def handle_checkin(bot: Bot, event: MessageEvent, args: Message = CommandA
         comm.completed_count += count
         comm.checked_in = True
         comm.last_checked_in_at = datetime.now()
+        await audit(session, "qq", event.get_user_id(), "打卡", target=f"用户「{user.name}」- 游戏「{game.name}」", detail=f"+{count} completed={comm.completed_count}")
         await cmd_checkin.finish(
             f"已为用户「{user.name}」的游戏「{game.name}」打卡 +{count}\n"
             f"已完成次数：{comm.completed_count}，今日打卡：✓"
@@ -543,6 +558,7 @@ async def handle_unbind(bot: Bot, event: MessageEvent, args: Message = CommandAr
             await cmd_unbind.finish(f"用户「{user.name}」未绑定QQ号")
         old_qq = user.qq_id
         user.qq_id = None
+        await audit(session, "qq", event.get_user_id(), "解绑QQ", target=f"用户「{user.name}」", detail=f"old_qq={old_qq}")
         await cmd_unbind.finish(f"已解除用户「{user.name}」与 QQ {old_qq} 的绑定")
 
 
@@ -593,6 +609,7 @@ async def handle_set_count(bot: Bot, event: MessageEvent, args: Message = Comman
         else:
             gc.total_count = max(0, delta)
             action = f"已设置为 {gc.total_count} 次"
+        await audit(session, "qq", event.get_user_id(), "设置应得次数", target=f"用户「{user.name}」- 游戏组「{grp.name}」", detail=f"delta={delta} total={gc.total_count}")
         await cmd_set_count.finish(
             f"用户「{user.name}」游戏组「{grp.name}」应得次数{action}\n"
             f"当前应得次数：{gc.total_count}"
@@ -627,6 +644,7 @@ async def handle_reset(bot: Bot, event: MessageEvent, args: Message = CommandArg
         comm = await get_or_create_commission(session, user.id, game.id)
         comm.completed_count = 0
         comm.checked_in = False
+        await audit(session, "qq", event.get_user_id(), "重置已完成", target=f"用户「{user.name}」- 游戏「{game.name}」")
         await cmd_reset.finish(
             f"已重置用户「{user.name}」游戏「{game.name}」的已完成次数（归零）"
         )
@@ -666,6 +684,7 @@ async def handle_delete(bot: Bot, event: MessageEvent, args: Message = CommandAr
             await cmd_delete.finish(
                 f"用户「{user.name}」没有游戏「{game.name}」的代肝记录"
             )
+        await audit(session, "qq", event.get_user_id(), "删除代肝记录", target=f"用户「{user.name}」- 游戏「{game.name}」")
         await session.delete(comm)
         await cmd_delete.finish(
             f"已删除用户「{user.name}」游戏「{game.name}」的代肝数据"
@@ -693,10 +712,9 @@ async def handle_set_password(
         await cmd_set_password.finish("密码长度至少6位")
 
     async with get_session() as session:
-        result = await session.execute(select(AuthSettings).where(AuthSettings.id == 1))
-        auth = result.scalar_one_or_none()
-        if auth:
-            auth.admin_password_hash = hash_password(password)
-        else:
-            session.add(AuthSettings(id=1, admin_password_hash=hash_password(password)))
+        result = await session.execute(select(User).where(User.role == "admin").limit(1))
+        admin = result.scalars().first()
+        if admin:
+            admin.password_hash = hash_password(password)
+        await audit(session, "qq", event.get_user_id(), "设置管理员密码")
         await cmd_set_password.finish("管理员密码已更新")

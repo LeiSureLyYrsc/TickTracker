@@ -1,0 +1,30 @@
+[project]
+name = "nonebot-plugin-commision-tracker"
+version = "1.0.0"
+description = "代肝记录管理插件 - 追踪游戏代肝次数与打卡状态，并附带 WebUI"
+readme = "README.md"
+requires-python = ">=3.10, <4.0"
+# 核心依赖：插件主体功能（QQ 命令 + 数据库 + 定时重置）必需
+dependencies = [
+    "nonebot2>=2.5.0",
+    "nonebot-adapter-onebot>=2.4.6",
+    "sqlalchemy>=2.0.51",
+    "aiosqlite>=0.22.1",
+    "bcrypt>=5.0.0",
+    "apscheduler>=3.10.4",
+]
+# 额外依赖：按功能拆分，非必需部分按需安装
+[project.optional-dependencies]
+# WebUI 管理界面（FastAPI 服务 + JWT 认证）
+webui = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
+    "python-jose[cryptography]>=3.3.0",
+    "python-multipart>=0.0.9",
+]
+# 增强认证（邮箱 / Passkey / OIDC）
+auth = [
+    "webauthn>=2.0",
+    "aiosmtplib>=5.0",
+    "authlib>=1.0",
+]
