@@ -153,7 +153,16 @@ async def render_text_to_image(
             return img
         finally:
             await context.close()
-    except Exception:
+    except Exception as e:
+        # 渲染失败时回退纯文本；显式记录原因，便于排查（此前静默吞掉异常）
+        try:
+            from nonebot.log import logger
+
+            logger.warning(
+                f"[代肝追踪] 文转图渲染失败，已回退纯文本：{type(e).__name__}: {e}"
+            )
+        except Exception:
+            pass
         return None
 
 

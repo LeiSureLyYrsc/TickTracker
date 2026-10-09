@@ -1,4 +1,15 @@
 """代肝记录管理插件入口"""
+import sys
+
+# Windows 控制台默认 GBK 编码：当消息/日志包含 emoji（如 🦌、✅）时，Loguru 写日志会抛
+# UnicodeEncodeError（表现为 “--- End of logging error ---”）。让标准输出对无法编码的
+# 字符回退为转义而非抛异常，避免打断日志输出与文转图回退流程。
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(errors="backslashreplace")
+        except Exception:
+            pass
 from nonebot import get_driver, get_plugin_config
 from nonebot.plugin import PluginMetadata
 
