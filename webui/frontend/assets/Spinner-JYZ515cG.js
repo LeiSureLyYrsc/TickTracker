@@ -1,0 +1,1 @@
+import{On as e,k as t,mt as n,v as r}from"./runtime-core.esm-bundler-DC3Tigql.js";import{t as i}from"./createLucideIcon-2tKdrN0K.js";var a=i({name:`loader-circle`,size:24,node:[[`path`,{d:`M21 12a9 9 0 1 1-6.219-8.56`,key:`13zald`}]],aliases:[`loader-2`]}),o=t({__name:`Spinner`,setup(t){return(t,i)=>(n(),r(e(a),{class:`h-4 w-4 animate-spin`}))}});export{o as t};

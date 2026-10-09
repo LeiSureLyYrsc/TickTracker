@@ -1,0 +1,1 @@
+import{vn as e}from"./runtime-core.esm-bundler-DC3Tigql.js";import{n as t}from"./pinia-DEFr0ZEy.js";var n=null,r=t(`confirm`,()=>{let t=e(!1),r=e({title:``});function i(e){return r.value=e,t.value=!0,new Promise(e=>{n=e})}function a(e){t.value=!1,n?.(e),n=null}return{open:t,options:r,confirm:i,settle:a}});export{r as t};

@@ -1,0 +1,1 @@
+import{b as e,mt as t,xt as n}from"./runtime-core.esm-bundler-DC3Tigql.js";import{t as r}from"./_plugin-vue_export-helper-BFQpxgfo.js";var i={},a={class:`rounded-xl border border-border bg-surface shadow-[0_1px_0_0_rgba(255,255,255,0.02)_inset]`};function o(r,i){return t(),e(`div`,a,[n(r.$slots,`default`)])}var s=r(i,[[`render`,o]]);export{s as t};

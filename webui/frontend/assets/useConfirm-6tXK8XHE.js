@@ -1,0 +1,1 @@
+import{t as e}from"./confirm-v2yi43u9.js";function t(){let t=e();return e=>t.confirm(e)}export{t};
