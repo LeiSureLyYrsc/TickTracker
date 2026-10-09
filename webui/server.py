@@ -64,9 +64,15 @@ def create_app(jwt_secret: str) -> FastAPI:
 
     # 挂载静态文件
     if FRONTEND_DIR.exists():
+        # 旧版 Astro 构建产物（兼容保留）
         assets_dir = FRONTEND_DIR / "_astro"
         if assets_dir.exists():
-            app.mount("/_astro", StaticFiles(directory=str(assets_dir)), name="assets")
+            app.mount("/_astro", StaticFiles(directory=str(assets_dir)), name="astro-assets")
+
+        # Vite 构建产物：显式挂载 /assets，确保哈希资源返回正确 MIME
+        vite_assets_dir = FRONTEND_DIR / "assets"
+        if vite_assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=str(vite_assets_dir)), name="vite-assets")
 
         @app.get("/")
         async def serve_index():

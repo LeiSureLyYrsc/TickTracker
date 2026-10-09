@@ -71,7 +71,7 @@ class LoginOptionsRequest(BaseModel):
 
 
 class LoginVerifyRequest(BaseModel):
-    account: str
+    account: str = ""
     credential: dict
 
 
@@ -176,6 +176,9 @@ async def login_options(body: LoginOptionsRequest, request: Request):
             raise HTTPException(status_code=403, detail="Passkey 功能未开启")
         rp_id, origin = _resolve_site(request, settings)
 
+        # account 可选：为空时走可发现凭证（无用户名）流程；
+        # 即便填了账号但查无此人，也返回空 allow 列表而不报错，
+        # 以便浏览器/系统通行密钥选择器仍可工作，同时避免账号枚举。
         account = body.account.strip()
         user_id = None
         if account:
@@ -185,8 +188,6 @@ async def login_options(body: LoginOptionsRequest, request: Request):
             user = result.scalar_one_or_none()
             if user:
                 user_id = user.id
-            else:
-                raise HTTPException(status_code=404, detail="账号不存在")
 
         if user_id is not None:
             creds = await _creds_for(session, user_id)

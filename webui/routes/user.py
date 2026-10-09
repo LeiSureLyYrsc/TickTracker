@@ -146,6 +146,57 @@ async def get_my_note(payload: dict = Depends(require_user)):
         return {"content": note.content if note else ""}
 
 
+class UserCheckinRequest(BaseModel):
+    game_id: int
+    count: int = 1
+
+
+@router.post("/me/checkin")
+async def user_checkin(
+    body: UserCheckinRequest, request: Request, payload: dict = Depends(require_user)
+):
+    """当前用户对自己已绑定的某款游戏打卡（只能操作自己的记录）"""
+    user_id = int(payload.get("sub"))
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(Commission).where(
+                Commission.user_id == user_id, Commission.game_id == body.game_id
+            )
+        )
+        commission = result.scalar_one_or_none()
+        if not commission:
+            raise HTTPException(status_code=404, detail="未找到该游戏记录，无法打卡")
+
+        delta = max(0, body.count)
+        commission.completed_count += delta
+        commission.checked_in = True
+        commission.last_checked_in_at = datetime.now()
+
+        user_result = await session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        await audit(
+            session,
+            "user",
+            user.name if user else f"用户#{user_id}",
+            "用户打卡",
+            detail=f"game_id={body.game_id} count={delta}",
+            ip=await get_client_ip(request, session),
+        )
+
+        return {
+            "message": "打卡成功",
+            "game_id": commission.game_id,
+            "completed_count": commission.completed_count,
+            "checked_in": commission.checked_in,
+            "last_checked_in_at": (
+                commission.last_checked_in_at.isoformat()
+                if commission.last_checked_in_at
+                else None
+            ),
+        }
+
+
 class ReminderRequest(BaseModel):
     enabled: bool | None = None
     push_time: str | None = None

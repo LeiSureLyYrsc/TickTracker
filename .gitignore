@@ -1,12 +1,29 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
+.eggs/
+build/
+dist/
 .venv/
 venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 
 # 运行数据
 data/
 *.db
 *.sqlite
+*.sqlite3
 .env
 .env.*
+
+# 工具 / 系统
+.omo/
+.vscode/
+.idea/
+.DS_Store
+*.log
+
+# 注意：webui/frontend 是插件的构建产物，需随插件一起提交，请勿忽略

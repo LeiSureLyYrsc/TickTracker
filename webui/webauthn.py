@@ -13,6 +13,7 @@ from webauthn import (
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     PublicKeyCredentialDescriptor,
+    ResidentKeyRequirement,
     UserVerificationRequirement,
 )
 
@@ -57,6 +58,30 @@ def _pop_challenge(challenge: bytes) -> dict | None:
     return c
 
 
+def _enum_value(v):
+    return getattr(v, "value", v)
+
+
+def _serialize_authenticator_selection(sel) -> dict:
+    """序列化 authenticatorSelection，省略空值，确保浏览器收到 resident key 要求。"""
+    if not sel:
+        return {}
+    out: dict = {}
+    attachment = getattr(sel, "authenticator_attachment", None)
+    if attachment is not None:
+        out["authenticatorAttachment"] = _enum_value(attachment)
+    resident_key = getattr(sel, "resident_key", None)
+    if resident_key is not None:
+        out["residentKey"] = _enum_value(resident_key)
+    require_resident_key = getattr(sel, "require_resident_key", None)
+    if require_resident_key is not None:
+        out["requireResidentKey"] = bool(require_resident_key)
+    user_verification = getattr(sel, "user_verification", None)
+    if user_verification is not None:
+        out["userVerification"] = _enum_value(user_verification)
+    return out
+
+
 def _serialize_creation_options(o) -> dict:
     return {
         "rp": {"name": o.rp.name, "id": o.rp.id},
@@ -71,6 +96,9 @@ def _serialize_creation_options(o) -> dict:
         ],
         "timeout": o.timeout,
         "attestation": o.attestation,
+        "authenticatorSelection": _serialize_authenticator_selection(
+            getattr(o, "authenticator_selection", None)
+        ),
         "excludeCredentials": [
             {"id": _b64u(c.id), "type": "public-key"} for c in o.exclude_credentials
         ],
@@ -108,7 +136,7 @@ def registration_options(
             for cid in exclude_credential_ids
         ],
         authenticator_selection=AuthenticatorSelectionCriteria(
-            resident_key="preferred",
+            resident_key=ResidentKeyRequirement.REQUIRED,
             user_verification=UserVerificationRequirement.PREFERRED,
         ),
     )
