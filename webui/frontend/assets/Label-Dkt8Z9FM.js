@@ -1,0 +1,1 @@
+import{b as e,mt as t,xt as n}from"./runtime-core.esm-bundler-DC3Tigql.js";import{t as r}from"./_plugin-vue_export-helper-BDNMzG2s.js";var i={},a={class:`text-xs font-medium text-muted`};function o(r,i){return t(),e(`label`,a,[n(r.$slots,`default`)])}var s=r(i,[[`render`,o]]);export{s as t};

@@ -1,0 +1,1 @@
+import{b as e,mt as t}from"./runtime-core.esm-bundler-DC3Tigql.js";import{t as n}from"./_plugin-vue_export-helper-BDNMzG2s.js";var r={},i={class:`animate-pulse rounded-md bg-surface-2`};function a(n,r){return t(),e(`div`,i)}var o=n(r,[[`render`,a]]);export{o as t};
