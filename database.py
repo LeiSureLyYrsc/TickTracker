@@ -48,6 +48,7 @@ COLUMN_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         ("render_template", "VARCHAR(16) DEFAULT 'shadcn'"),
         ("render_font", "VARCHAR(128) DEFAULT ''"),
         ("render_font_dir", "VARCHAR(256) DEFAULT './data/fonts'"),
+        ("pinned_user_ids", "TEXT DEFAULT '[]'"),
     ],
 }
 

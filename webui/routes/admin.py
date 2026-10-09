@@ -988,8 +988,63 @@ async def update_settings(body: UpdateSettingsRequest, request: Request, _: dict
         return _settings_to_dict(settings)
 
 
-# ---- 字体（文转图） ----
+# ---- 置顶用户（代肝数据/今日进度排序） ----
 
+class PinnedUsersRequest(BaseModel):
+    user_ids: list[int] = []
+
+
+@router.get("/pinned-users")
+async def get_pinned_users(_: dict = Depends(require_admin)):
+    """获取置顶用户 ID 列表"""
+    import json
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(SystemSettings).where(SystemSettings.id == 1)
+        )
+        settings = result.scalar_one_or_none()
+        if not settings:
+            return {"user_ids": []}
+        try:
+            ids = json.loads(settings.pinned_user_ids or "[]")
+        except Exception:
+            ids = []
+        if not isinstance(ids, list):
+            ids = []
+        return {"user_ids": [int(i) for i in ids if isinstance(i, (int, str)) and str(i).lstrip("-").isdigit()]}
+
+
+@router.put("/pinned-users")
+async def update_pinned_users(
+    body: PinnedUsersRequest, request: Request, _: dict = Depends(require_admin)
+):
+    """整体替换置顶用户 ID 列表"""
+    import json
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(SystemSettings).where(SystemSettings.id == 1)
+        )
+        settings = result.scalar_one_or_none()
+        if not settings:
+            settings = SystemSettings(id=1)
+            session.add(settings)
+            await session.flush()
+        ids = sorted({int(i) for i in body.user_ids})
+        settings.pinned_user_ids = json.dumps(ids, ensure_ascii=False)
+        await audit(
+            session,
+            "admin",
+            "admin",
+            "修改置顶用户",
+            detail=f"user_ids={ids}",
+            ip=await get_client_ip(request, session),
+        )
+        return {"user_ids": ids}
+
+
+# ---- 字体（文转图） ----
 async def _current_font_dir(session) -> str:
     result = await session.execute(
         select(SystemSettings).where(SystemSettings.id == 1)

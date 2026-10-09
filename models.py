@@ -301,6 +301,10 @@ class SystemSettings(Base):
     # 字体目录（默认 ./data/fonts，仅本地无头浏览器加载，不对外提供）
     render_font_dir: Mapped[str] = mapped_column(String(256), default="./data/fonts", nullable=False)
 
+    # ---- 管理端置顶 ----
+    # 置顶用户 ID（JSON 数组）：管理端「代肝数据」「今日进度」按此优先排序
+    pinned_user_ids: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+
 
 class AuditLog(Base):
     """审计日志表"""
